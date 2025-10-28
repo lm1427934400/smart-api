@@ -61,6 +61,11 @@ func newDataPermission(tx *gorm.DB, userId interface{}) (*DataPermission, error)
 
 func Permission(tableName string, p *DataPermission) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
+		// 对于sys_content表，允许未登录用户访问（p为nil表示未登录）
+		if tableName == "sys_content" && p == nil {
+			return db
+		}
+		
 		if !config.ApplicationConfig.EnableDP {
 			return db
 		}
@@ -70,7 +75,7 @@ func Permission(tableName string, p *DataPermission) func(db *gorm.DB) *gorm.DB 
 		case "3":
 			return db.Where(tableName+".create_by in (SELECT user_id from sys_user where dept_id = ? )", p.DeptId)
 		case "4":
-			return db.Where(tableName+".create_by in (SELECT user_id from sys_user where sys_user.dept_id in(select dept_id from sys_dept where dept_path like ? ))", "%/"+pkg.IntToString(p.DeptId)+"/%")
+			return db.Where(tableName+".create_by in (SELECT user_id from sys_user where sys_user.dept_id in(select dept_id from sys_dept where dept_path like ? ))", "%/"+pkg.IntToString(p.DeptId)+"/")
 		case "5":
 			return db.Where(tableName+".create_by = ?", p.UserId)
 		default:

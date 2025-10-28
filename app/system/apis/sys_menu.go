@@ -193,9 +193,31 @@ func (e SysMenu) GetMenuRole(c *gin.Context) {
 		return
 	}
 
-	result, err := s.SetMenuRole(user.GetRoleName(c))
+	// 添加调试日志，输出当前角色名称
+	roleName := user.GetRoleName(c)
+	e.Logger.Info("当前用户角色名称:", roleName)
+	
+	// 检查上下文中的rolekey
+	if roleKey, exists := c.Get("rolekey"); exists {
+		e.Logger.Info("上下文中的rolekey:", roleKey)
+	}
+	
+	if roleNameKey, exists := c.Get("roleName"); exists {
+		e.Logger.Info("上下文中的roleName:", roleNameKey)
+	}
+	
+	result, err := s.SetMenuRole(roleName)
+	
+	// 记录返回的菜单数量
+	e.Logger.Info("返回的菜单数量:", len(result))
+	
+	// 记录第一个菜单信息（如果有）
+	if len(result) > 0 {
+		e.Logger.Info("第一个菜单信息:", result[0].MenuName, "-", result[0].Path)
+	}
 
 	if err != nil {
+		e.Logger.Error("菜单查询错误:", err)
 		e.Error(500, err, "查询失败")
 		return
 	}

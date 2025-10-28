@@ -4,7 +4,6 @@ import (
 	"github.com/go-admin-team/go-admin-core/logger"
 	"github.com/go-admin-team/go-admin-core/sdk/pkg/captcha"
 	"net/http"
-	"smart-api/app/system/models"
 	"smart-api/app/system/service"
 	"smart-api/app/system/service/dto"
 	"smart-api/common"
@@ -214,16 +213,35 @@ func LogOut(c *gin.Context) {
 }
 
 func Authorizator(data interface{}, c *gin.Context) bool {
-
+	// 正确处理IdentityHandler返回的数据结构
 	if v, ok := data.(map[string]interface{}); ok {
-		u, _ := v["user"].(models.SysUser)
-		r, _ := v["role"].(models.SysRole)
-		c.Set("role", r.RoleName)
-		c.Set("roleIds", r.RoleId)
-		c.Set("userId", u.UserId)
-		c.Set("userName", u.Username)
-		c.Set("dataScope", r.DataScope)
-		return true
+		// 从v中直接获取字段，而不是尝试类型断言为models.SysUser和models.SysRole
+		if roleKey, ok := v["RoleKey"].(string); ok {
+			c.Set("role", roleKey)
+			// 同时设置roleName，确保GetRoleName(c)能获取到角色名称
+			c.Set("roleName", roleKey)
+			// 也设置rolekey，这可能是user.GetRoleName(c)实际使用的键
+			c.Set("rolekey", roleKey)
+		}
+		if roleIds, ok := v["RoleIds"]; ok {
+			c.Set("roleIds", roleIds)
+		}
+		if userId, ok := v["UserId"]; ok {
+			c.Set("userId", userId)
+			// 同时设置identity，确保GetUserId(c)能获取到用户ID
+			c.Set("identity", userId)
+		}
+		if userName, ok := v["UserName"].(string); ok {
+			c.Set("userName", userName)
+			// 同时设置nice，确保GetUserName(c)能获取到用户名
+			c.Set("nice", userName)
+		}
+		if dataScope, ok := v["DataScope"]; ok {
+			c.Set("dataScope", dataScope)
+		}
+		// 只要能获取到用户ID，就认为认证成功
+		_, hasUserId := v["UserId"]
+		return hasUserId
 	}
 	return false
 }
