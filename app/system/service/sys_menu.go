@@ -254,17 +254,21 @@ func (e *SysMenu) GetSysMenuByRoleName(roleName ...string) ([]models.SysMenu, er
 
 	if len(roleName) > 0 && admin {
 		var data []models.SysMenu
-		err = e.Orm.Where(" menu_type in ('M','C')").
+		err = e.Orm.Where(fmt.Sprintf(" menu_type in ('%s', '%s') and deleted_at is null", cModels.Directory, cModels.Menu)).
 			Order("sort").
 			Find(&data).
 			Error
+		err = errors.WithStack(err)
 		MenuList = data
 	} else {
 		err = e.Orm.Model(&role).Preload("SysMenu", func(db *gorm.DB) *gorm.DB {
-			return db.Where(" menu_type in ('M','C')").Order("sort")
+			return db.Where(fmt.Sprintf(" menu_type in ('%s', '%s') and deleted_at is null", cModels.Directory, cModels.Menu)).Order("sort")
 		}).Where("role_name in ?", roleName).Find(&role).
 			Error
-		MenuList = *role.SysMenu
+		err = errors.WithStack(err)
+		if role.SysMenu != nil {
+			MenuList = *role.SysMenu
+		}
 	}
 
 	if err != nil {
@@ -395,15 +399,36 @@ func (e *SysMenu) getByRoleName(roleName string) ([]models.SysMenu, error) {
 	var err error
 	data := make([]models.SysMenu, 0)
 
+	// 添加调试日志
+	fmt.Println("查询角色菜单，角色名:", roleName)
+
 	if roleName == "admin" {
-		err = e.Orm.Where(" menu_type in ('M','C') and deleted_at is null").
-			Order("sort").
+		// 使用安全的参数绑定方式，而不是字符串拼接
+		err = e.Orm.Where("menu_type IN (?, ?) AND deleted_at IS NULL",
+			cModels.Directory, cModels.Menu).
+			Order("sort ASC").
 			Find(&data).
 			Error
-		err = errors.WithStack(err)
+
+		// 检查错误
+		if err != nil {
+			fmt.Println("admin菜单查询错误:", err.Error())
+			return nil, errors.WithStack(err)
+		}
+		fmt.Println("admin查询到的菜单数量:", len(data))
 	} else {
 		role.RoleKey = roleName
-		err = e.Orm.Model(&role).Where("role_key = ? ", roleName).Preload("SysMenu").First(&role).Error
+		err = e.Orm.Model(&role).Where("role_key = ?", roleName).Preload("SysMenu").First(&role).Error
+
+		// 检查是否是记录未找到的错误
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// 角色不存在时返回空菜单列表，而不是错误
+				return data, nil
+			}
+			// 其他错误正常返回
+			return nil, err
+		}
 
 		if role.SysMenu != nil {
 			mIds := make([]int, 0)
@@ -419,5 +444,5 @@ func (e *SysMenu) getByRoleName(roleName string) ([]models.SysMenu, error) {
 	}
 
 	sort.Sort(models.SysMenuSlice(data))
-	return data, err
+	return data, nil
 }

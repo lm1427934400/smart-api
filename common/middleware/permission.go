@@ -1,8 +1,10 @@
 package middleware
 
 import (
-	"github.com/casbin/casbin/v2/util"
+	"fmt"
 	"net/http"
+
+	"github.com/casbin/casbin/v2/util"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-admin-team/go-admin-core/sdk"
@@ -21,11 +23,59 @@ func AuthCheckRole() gin.HandlerFunc {
 		// 不用鉴权的接口信息 settings.go
 		var res, casbinExclude bool
 		var err error
-		//检查权限
-		if v["rolekey"] == "admin" {
-			res = true
-			c.Next()
-			return
+		//检查权限 - 添加详细调试日志
+		fmt.Println("权限中间件-开始检查权限...")
+		// 从context中获取所有可能的role相关键值
+		fmt.Println("权限中间件-context中的角色信息:")
+		// 尝试从context中获取角色信息
+		roleKeyCtx, roleKeyCtxExists := c.Get("rolekey")
+		RoleKeyCtx, RoleKeyCtxExists := c.Get("RoleKey")
+		roleNameCtx, roleNameCtxExists := c.Get("roleName")
+		userIDCtx, userIDCtxExists := c.Get("userId")
+
+		fmt.Println("  - context rolekey存在:", roleKeyCtxExists, "值:", roleKeyCtx)
+		fmt.Println("  - context RoleKey存在:", RoleKeyCtxExists, "值:", RoleKeyCtx)
+		fmt.Println("  - context roleName存在:", roleNameCtxExists, "值:", roleNameCtx)
+		fmt.Println("  - context userId存在:", userIDCtxExists, "值:", userIDCtx)
+
+		// 从jwt claims中获取rolekey
+		if roleKey, exists := v["rolekey"]; exists {
+			fmt.Println("权限中间件-jwt claims中的rolekey值:", roleKey)
+			if roleKey == "admin" {
+				fmt.Println("权限中间件-从jwt claims检测到admin角色，直接通过权限验证")
+				res = true
+				c.Next()
+				return
+			}
+		} else {
+			fmt.Println("权限中间件-jwt claims中未找到rolekey字段")
+		}
+
+		// 检查jwt claims中其他可能的角色字段
+		if roleKey, exists := v["RoleKey"]; exists {
+			fmt.Println("权限中间件-jwt claims中的RoleKey值:", roleKey)
+			if roleKey == "admin" {
+				fmt.Println("权限中间件-从jwt claims检测到admin角色(RoleKey)，直接通过权限验证")
+				res = true
+				c.Next()
+				return
+			}
+		}
+
+		if roleName, exists := v["roleName"]; exists {
+			fmt.Println("权限中间件-jwt claims中的roleName值:", roleName)
+			if roleName == "admin" {
+				fmt.Println("权限中间件-从jwt claims检测到admin角色(roleName)，直接通过权限验证")
+				res = true
+				c.Next()
+				return
+			}
+		}
+
+		// 输出所有jwt claims键值，用于调试
+		fmt.Println("权限中间件-jwt claims键值列表:")
+		for key, value := range v {
+			fmt.Println("jwt claim键值:", key, "=", value)
 		}
 		// 不做验证的接口信息
 		for _, i := range CasbinExclude {

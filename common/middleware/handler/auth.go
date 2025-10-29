@@ -28,6 +28,7 @@ func PayloadFunc(data interface{}) jwt.MapClaims {
 			jwt.IdentityKey:  u.UserId,
 			jwt.RoleIdKey:    r.RoleId,
 			jwt.RoleKey:      r.RoleKey,
+			"rolekey":        r.RoleKey, // 添加小写的rolekey，确保权限检查中间件能识别
 			jwt.NiceKey:      u.Username,
 			jwt.DataScopeKey: r.DataScope,
 			jwt.RoleNameKey:  r.RoleName,
@@ -42,6 +43,7 @@ func IdentityHandler(c *gin.Context) interface{} {
 		"IdentityKey": claims["identity"],
 		"UserName":    claims["nice"],
 		"RoleKey":     claims["rolekey"],
+		"rolekey":     claims["rolekey"], // 添加小写的rolekey，确保权限中间件能识别
 		"UserId":      claims["identity"],
 		"RoleIds":     claims["roleid"],
 		"DataScope":   claims["datascope"],
@@ -49,19 +51,6 @@ func IdentityHandler(c *gin.Context) interface{} {
 }
 
 // Authenticator 获取token
-// @Summary 登陆
-// @Description 获取token
-// @Description LoginHandler can be used by clients to get a jwt token.
-// @Description Payload needs to be json in the form of {"username": "USERNAME", "password": "PASSWORD"}.
-// @Description Reply will be of the form {"token": "TOKEN"}.
-// @Description dev mode：It should be noted that all fields cannot be empty, and a value of 0 can be passed in addition to the account password
-// @Description 注意：开发模式：需要注意全部字段不能为空，账号密码外可以传入0值
-// @Tags 登陆
-// @Accept  application/json
-// @Product application/json
-// @Param account body Login  true "account"
-// @Success 200 {string} string "{"code": 200, "expire": "2019-08-07T12:45:48+08:00", "token": ".eyJleHAiOjE1NjUxNTMxNDgsImlkIjoiYWRtaW4iLCJvcmlnX2lhdCI6MTU2NTE0OTU0OH0.-zvzHvbg0A" }"
-// @Router /api/v1/login [post]
 func Authenticator(c *gin.Context) (interface{}, error) {
 	log := api.GetRequestLogger(c)
 	db, err := pkg.GetOrm(c)
@@ -81,7 +70,6 @@ func Authenticator(c *gin.Context) (interface{}, error) {
 		username = loginVals.Username
 		msg = "数据解析失败"
 		status = "1"
-
 		return nil, jwt.ErrMissingLoginValues
 	}
 	if config.ApplicationConfig.Mode != "dev" {
@@ -89,41 +77,29 @@ func Authenticator(c *gin.Context) (interface{}, error) {
 			username = loginVals.Username
 			msg = "验证码错误"
 			status = "1"
-
 			return nil, jwt.ErrInvalidVerificationode
 		}
 	}
-	if loginVals.Source == "LDAP" {
-		// LDAP 登录逻辑
-		if err = handleLDAPLogin(c, loginVals); err != nil {
-			msg = "LDAP 登录失败"
-			status = "1"
-			log.Warnf("%s login failed!", loginVals.Username)
-			return nil, err
-		}
-	} else if loginVals.Source == "SYSTEM" {
-		// 系统登录逻辑
-		if sysUser, role, e := loginVals.GetUser(db); e == nil {
-			username = loginVals.Username
-			return map[string]interface{}{"user": sysUser, "role": role}, nil
-		} else {
-			msg = "登录失败"
-			status = "1"
-			log.Warnf("%s login failed!", loginVals.Username)
-			return nil, jwt.ErrFailedAuthentication
-		}
-	} else {
-		msg = "登录失败"
-		status = "1"
-		log.Warnf("%s login failed!", loginVals.Username)
-		return nil, jwt.ErrFailedAuthentication
-	}
-	// 如果 LDAP 登录成功但未找到用户信息
+	
+	// 先尝试系统登录，这是最常用的方式
+	username = loginVals.Username
 	if sysUser, role, e := loginVals.GetUser(db); e == nil {
-		username = loginVals.Username
+		// 如果系统登录成功，直接返回
 		return map[string]interface{}{"user": sysUser, "role": role}, nil
 	}
-
+	
+	// 系统登录失败，如果是LDAP登录请求，则尝试LDAP登录
+	if loginVals.Source == "LDAP" {
+		log.Info("尝试LDAP登录:", loginVals.Username)
+		if err = handleLDAPLogin(c, loginVals); err == nil {
+			// LDAP登录成功后，再次尝试获取用户信息
+			if sysUser, role, e := loginVals.GetUser(db); e == nil {
+				return map[string]interface{}{"user": sysUser, "role": role}, nil
+			}
+		}
+	}
+	
+	// 所有登录方式都失败
 	msg = "登录失败"
 	status = "1"
 	log.Warnf("%s login failed!", loginVals.Username)
@@ -215,25 +191,28 @@ func LogOut(c *gin.Context) {
 func Authorizator(data interface{}, c *gin.Context) bool {
 	// 正确处理IdentityHandler返回的数据结构
 	if v, ok := data.(map[string]interface{}); ok {
-		// 从v中直接获取字段，而不是尝试类型断言为models.SysUser和models.SysRole
+		// 处理角色信息
 		if roleKey, ok := v["RoleKey"].(string); ok {
 			c.Set("role", roleKey)
-			// 同时设置roleName，确保GetRoleName(c)能获取到角色名称
 			c.Set("roleName", roleKey)
-			// 也设置rolekey，这可能是user.GetRoleName(c)实际使用的键
 			c.Set("rolekey", roleKey)
 		}
+		// 尝试从rolekey字段获取角色
+		if roleKey, ok := v["rolekey"].(string); ok {
+			c.Set("role", roleKey)
+			c.Set("roleName", roleKey)
+			c.Set("rolekey", roleKey)
+		}
+		// 处理其他用户信息
 		if roleIds, ok := v["RoleIds"]; ok {
 			c.Set("roleIds", roleIds)
 		}
 		if userId, ok := v["UserId"]; ok {
 			c.Set("userId", userId)
-			// 同时设置identity，确保GetUserId(c)能获取到用户ID
 			c.Set("identity", userId)
 		}
 		if userName, ok := v["UserName"].(string); ok {
 			c.Set("userName", userName)
-			// 同时设置nice，确保GetUserName(c)能获取到用户名
 			c.Set("nice", userName)
 		}
 		if dataScope, ok := v["DataScope"]; ok {

@@ -38,6 +38,5 @@ func RegisterArticlePublicRoutes(v1 *gin.RouterGroup) {
 	contentAPI := apis.NewArticleContentAPI()
 	v1.GET("/article", contentAPI.GetPage)                             // 文章列表
 	v1.GET("/article/detail/:id", contentAPI.GetDetail)                // 文章详情
-	v1.GET("/article/current-user", contentAPI.GetCurrentUserArticles) // 当前用户文章
 	v1.GET("/article/preview", contentAPI.PreviewMarkdown)             // Markdown预览
 }

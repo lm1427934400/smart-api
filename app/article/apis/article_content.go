@@ -2,12 +2,14 @@ package apis
 
 import (
 	"fmt"
+	"smart-api/app/article/models"
 	"smart-api/app/article/service"
 	"smart-api/app/article/service/dto"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-admin-team/go-admin-core/sdk/api"
+	"github.com/go-admin-team/go-admin-core/sdk/pkg/jwtauth/user"
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
@@ -131,23 +133,40 @@ func (e *ArticleContentAPI) GetDetail(c *gin.Context) {
 
 // AddArticle 新增文章
 func (e *ArticleContentAPI) AddArticle(c *gin.Context) {
-	s := service.NewArticleContentService(nil)
-	req := dto.ArticleContentInsertReq{}
-	err := e.MakeContext(c).
-		MakeOrm().
-		Bind(&req).
-		MakeService(&s.Service).
-		Errors
-	if err != nil {
-		e.Logger.Error(err)
-		e.Error(500, err, "参数错误")
+	// 初始化API上下文和数据库连接
+	e.MakeContext(c)
+	e.MakeOrm()
+
+	// 检查初始化是否成功
+	if e.Errors != nil {
+		fmt.Println("初始化错误:", e.Errors)
+		e.Error(500, e.Errors, "初始化失败")
 		return
 	}
 
-	// 获取当前用户ID
-	// req.CreateBy 会在 service 层设置
+	// 检查Orm是否初始化成功
+	if e.Orm == nil {
+		fmt.Println("Orm is nil after initialization")
+		e.Error(500, nil, "数据库连接未初始化")
+		return
+	}
+
+	// 创建服务实例
+	s := &service.ArticleContentService{}
+	// 手动设置Orm
+	s.Orm = e.Orm
+
+	req := dto.ArticleContentInsertReq{}
+	// 绑定请求参数
+	e.Bind(&req)
+	if e.Errors != nil {
+		fmt.Println("Bind error:", e.Errors)
+		e.Error(500, e.Errors, "参数错误")
+		return
+	}
 
 	if err := s.Insert(c, &req); err != nil {
+		fmt.Println("Insert error:", err)
 		e.Error(500, err, "创建失败")
 		return
 	}
@@ -157,20 +176,40 @@ func (e *ArticleContentAPI) AddArticle(c *gin.Context) {
 
 // UpdateArticle 更新文章
 func (e *ArticleContentAPI) UpdateArticle(c *gin.Context) {
-	s := service.NewArticleContentService(nil)
+	// 初始化API上下文和数据库连接
+	e.MakeContext(c)
+	e.MakeOrm()
+
+	// 检查初始化是否成功
+	if e.Errors != nil {
+		fmt.Println("初始化错误:", e.Errors)
+		e.Error(500, e.Errors, "初始化失败")
+		return
+	}
+
+	// 检查Orm是否初始化成功
+	if e.Orm == nil {
+		fmt.Println("Orm is nil after initialization")
+		e.Error(500, nil, "数据库连接未初始化")
+		return
+	}
+
+	// 创建服务实例
+	s := &service.ArticleContentService{}
+	// 手动设置Orm
+	s.Orm = e.Orm
+
 	req := dto.ArticleContentUpdateReq{}
-	err := e.MakeContext(c).
-		MakeOrm().
-		Bind(&req).
-		MakeService(&s.Service).
-		Errors
-	if err != nil {
-		e.Logger.Error(err)
-		e.Error(500, err, "参数错误")
+	// 绑定请求参数
+	e.Bind(&req)
+	if e.Errors != nil {
+		fmt.Println("Bind error:", e.Errors)
+		e.Error(500, e.Errors, "参数错误")
 		return
 	}
 
 	if err := s.Update(c, &req); err != nil {
+		fmt.Println("Update error:", err)
 		e.Error(500, err, "更新失败")
 		return
 	}
@@ -180,25 +219,38 @@ func (e *ArticleContentAPI) UpdateArticle(c *gin.Context) {
 
 // DeleteArticle 删除文章
 func (e *ArticleContentAPI) DeleteArticle(c *gin.Context) {
-	s := service.NewArticleContentService(nil)
-	var ids []int64
-	err := e.MakeContext(c).
-		MakeOrm().
-		MakeService(&s.Service).
-		Errors
-	if err != nil {
-		e.Logger.Error(err)
-		e.Error(500, err, "初始化失败")
+	// 初始化API上下文和数据库连接
+	e.MakeContext(c)
+	e.MakeOrm()
+
+	// 检查初始化是否成功
+	if e.Errors != nil {
+		fmt.Println("初始化错误:", e.Errors)
+		e.Error(500, e.Errors, "初始化失败")
 		return
 	}
 
-	err = c.ShouldBindJSON(&ids)
+	// 检查Orm是否初始化成功
+	if e.Orm == nil {
+		fmt.Println("Orm is nil after initialization")
+		e.Error(500, nil, "数据库连接未初始化")
+		return
+	}
+
+	// 创建服务实例
+	s := &service.ArticleContentService{}
+	// 手动设置Orm
+	s.Orm = e.Orm
+
+	var ids []int64
+	err := c.ShouldBindJSON(&ids)
 	if err != nil {
 		e.Error(400, err, "参数错误")
 		return
 	}
 
 	if err := s.Delete(ids); err != nil {
+		fmt.Println("Delete error:", err)
 		e.Error(500, err, "删除失败")
 		return
 	}
@@ -206,97 +258,71 @@ func (e *ArticleContentAPI) DeleteArticle(c *gin.Context) {
 	e.OK(nil, "删除成功")
 }
 
-// GetCurrentUserArticles 获取当前用户的文章列表
+// GetCurrentUserArticles 获取当前用户的文章列表（支持树形结构）
 func (e *ArticleContentAPI) GetCurrentUserArticles(c *gin.Context) {
-	// 重写为更简洁健壮的实现
-	// 首先确保API实例不为空
-	if e == nil {
-		// 如果e为空，直接返回错误响应
-		if c != nil {
-			c.JSON(500, gin.H{"code": 500, "msg": "API实例未初始化"})
-		}
+	// 初始化API上下文和数据库连接
+	e.MakeContext(c)
+	e.MakeOrm()
+
+	// 检查初始化是否成功
+	if e.Errors != nil {
+		fmt.Println("初始化错误:", e.Errors)
+		e.Error(500, e.Errors, "初始化失败")
 		return
 	}
 
-	// 初始化上下文和ORM
-	if err := e.MakeContext(c).MakeOrm().Errors; err != nil {
-		e.Logger.Error("初始化上下文失败:", err)
-		e.Error(500, err, "系统初始化失败")
+	// 检查Orm是否初始化成功
+	if e.Orm == nil {
+		fmt.Println("Orm is nil after initialization")
+		e.Error(500, nil, "数据库连接未初始化")
 		return
 	}
 
-	// 直接获取ORM连接
-	db, err := e.GetOrm()
-	if err != nil || db == nil {
-		e.Logger.Error("获取数据库连接失败:", err)
-		e.Error(500, err, "数据库连接错误")
-		return
-	}
-
-	// 创建服务实例并直接设置ORM
+	// 创建服务实例
 	s := &service.ArticleContentService{}
-	if s == nil {
-		e.Error(500, nil, "服务初始化失败")
+	// 手动设置Orm
+	s.Orm = e.Orm
+
+	// 获取当前用户ID
+	userID := user.GetUserId(c)
+	if userID == 0 {
+		e.Error(401, nil, "未登录")
 		return
 	}
-	s.Orm = db
 
-	// 构建简单的分页响应结构
-	pageInfo := struct {
+	// 设置查询参数，只查询当前用户的文章
+	// 注意：不设置Type字段，因为数据库中不存在该字段
+	req := dto.ArticleContentQuery{}
+	req.CreateBy = int64(userID)
+	// 默认获取树形结构
+	req.Level = 0 // 0表示不限制层级
+
+	// 直接使用数据库查询，避免通过service层的type字段过滤
+	var articles []models.ArticleContent
+	err := e.Orm.Table("article_contents").
+		Where("create_by = ?", userID).
+		Find(&articles).Error
+
+	if err != nil {
+		fmt.Println("GetCurrentUserArticles error:", err)
+		e.Error(500, err, "查询失败")
+		return
+	}
+
+	// 构建响应数据
+	response := struct {
 		List      interface{} `json:"list"`
 		Count     int64       `json:"count"`
 		PageIndex int         `json:"pageIndex"`
 		PageSize  int         `json:"pageSize"`
-	}{}
-
-	// 解析分页参数
-	pageInfo.PageIndex = 1
-	pageInfo.PageSize = 10
-	if c != nil {
-		if pi := c.Query("pageIndex"); pi != "" {
-			fmt.Sscanf(pi, "%d", &pageInfo.PageIndex)
-		}
-		if ps := c.Query("pageSize"); ps != "" {
-			fmt.Sscanf(ps, "%d", &pageInfo.PageSize)
-		}
+	}{
+		List:      dto.ToResponseList(articles),
+		Count:     int64(len(articles)),
+		PageIndex: 1,
+		PageSize:  10,
 	}
 
-	// 验证分页参数
-	if pageInfo.PageIndex < 1 {
-		pageInfo.PageIndex = 1
-	}
-	if pageInfo.PageSize < 1 || pageInfo.PageSize > 100 {
-		pageInfo.PageSize = 10
-	}
-
-	// 使用固定的测试用户ID 1，避免用户认证问题
-	const testUserID = int64(1)
-
-	// 直接执行数据库查询，不经过service的GetPage方法
-	var list []map[string]interface{}
-	var count int64
-
-	// 查询总数（使用原生SQL避免软删除问题）
-	if err := db.Raw("SELECT COUNT(*) FROM article_contents WHERE create_by = ?", testUserID).Scan(&count).Error; err != nil {
-		e.Logger.Error("查询总数失败:", err)
-		e.Error(500, err, "查询失败")
-		return
-	}
-	pageInfo.Count = count
-
-	// 查询数据列表
-	offset := (pageInfo.PageIndex - 1) * pageInfo.PageSize
-	if err := db.Table("article_contents").Select("*").Where("create_by = ?", testUserID).
-		Order("created_at DESC").Offset(offset).Limit(pageInfo.PageSize).Find(&list).Error; err != nil {
-		e.Logger.Error("查询数据失败:", err)
-		e.Error(500, err, "查询失败")
-		return
-	}
-
-	pageInfo.List = list
-
-	// 返回成功响应
-	e.OK(pageInfo, "查询成功")
+	e.OK(response, "查询成功")
 }
 
 // StringToInt64 字符串转int64

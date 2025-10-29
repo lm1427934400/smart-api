@@ -13,19 +13,25 @@ import (
 // 实现了ActiveRecord接口，支持ORM操作
 
 type ArticleContent struct {
-	Id          int64          `json:"id" gorm:"primaryKey;autoIncrement;comment:文章ID"`
-	Title       string         `json:"title" gorm:"size:255;not null;comment:文章标题"`
-	Content     string         `json:"content" gorm:"type:longtext;not null;comment:Markdown内容"`
+	Id          int64          `json:"id" gorm:"primaryKey;autoIncrement;comment:ID"`
+	Title       string         `json:"title" gorm:"size:255;not null;comment:标题"`
+	Content     string         `json:"content" gorm:"type:longtext;comment:Markdown内容"`
 	HtmlContent string         `json:"html_content" gorm:"column:html_content;type:longtext;comment:HTML内容"`
 	CreateBy    int64          `json:"create_by" gorm:"column:create_by;index;comment:创建人ID"`
 	UpdateBy    int64          `json:"update_by" gorm:"column:update_by;comment:更新人ID"`
 	CreatedAt   time.Time      `json:"created_at" gorm:"column:created_at;index;autoCreateTime;comment:创建时间"`
 	UpdatedAt   time.Time      `json:"updated_at" gorm:"column:updated_at;autoUpdateTime;comment:更新时间"`
 	Status      int            `json:"status" gorm:"size:4;default:1;comment:状态：1-正常，0-禁用"`
-	Cover       string         `json:"cover" gorm:"-;comment:封面图"`       // 不映射到数据库
-	Summary     string         `json:"summary" gorm:"-;comment:摘要"`      // 不映射到数据库
-	ViewCount   int            `json:"view_count" gorm:"-;comment:浏览次数"` // 不映射到数据库
+	Cover       string         `json:"cover" gorm:"column:cover;size:500;comment:封面图"`
+	Summary     string         `json:"summary" gorm:"column:summary;size:500;comment:摘要"`
+	ViewCount   int            `json:"view_count" gorm:"column:view_count;default:0;comment:浏览次数"`
+	ParentId    *int64         `json:"parent_id" gorm:"column:parent_id;index;comment:父节点ID"`
+	Type        string         `json:"type" gorm:"column:type;size:20;default:'article';index;comment:类型：article-文章，directory-目录"`
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index;comment:删除时间"`
+	// 虚拟字段，用于树形结构
+	Children []ArticleContent `json:"children,omitempty" gorm:"-"`
+	Level    int              `json:"level,omitempty" gorm:"-"`
+	Expanded bool             `json:"expanded,omitempty" gorm:"-"`
 }
 
 // TableName 指定表名

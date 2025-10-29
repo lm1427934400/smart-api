@@ -21,7 +21,7 @@ func NewArticleContentService(s *service.Service) *ArticleContentService {
 	return &ArticleContentService{Service: *s}
 }
 
-// GetPage 获取分页列表
+// GetPage 获取分页列表（支持树形结构）
 func (s *ArticleContentService) GetPage(c *gin.Context, req *dto.ArticleContentQuery) (interface{}, error) {
 	// 安全检查
 	if s == nil {
@@ -53,33 +53,106 @@ func (s *ArticleContentService) GetPage(c *gin.Context, req *dto.ArticleContentQ
 		pageInfo.PageSize = 10
 	}
 
-	// 直接查询原始数据，避免转换问题
-	var list []models.ArticleContent
 	// 明确指定表名，使用Unscoped()禁用软删除过滤
 	db := s.Orm.Model(&models.ArticleContent{}).Table("article_contents").Unscoped()
 
-	// 添加用户过滤条件
+	// 添加过滤条件
 	if req.CreateBy > 0 {
 		db = db.Where("create_by = ?", req.CreateBy)
 	}
-
-	// 计算总数
-	var count int64
-	if err := db.Count(&count).Error; err != nil {
-		return nil, fmt.Errorf("查询总数失败: %v", err)
+	if req.Title != "" {
+		db = db.Where("title LIKE ?", "%"+req.Title+"%")
 	}
-	pageInfo.Count = count
+	if req.Status > 0 {
+		db = db.Where("status = ?", req.Status)
+	}
+	// 注意：移除对type字段的查询，因为数据库中不存在该字段
+	// if req.Type != "" {
+	// 	db = db.Where("type = ?", req.Type)
+	// }
+	if req.ParentId != nil {
+		db = db.Where("parent_id = ?", req.ParentId)
+	}
 
-	// 查询数据列表
-	offset := (pageInfo.PageIndex - 1) * pageInfo.PageSize
-	if err := db.Order("created_at DESC").Offset(offset).Limit(pageInfo.PageSize).Find(&list).Error; err != nil {
+	// 对于树形结构，如果需要完整的层级关系，先查询所有匹配的数据
+	var allItems []models.ArticleContent
+	if err := db.Find(&allItems).Error; err != nil {
 		return nil, fmt.Errorf("查询数据失败: %v", err)
 	}
 
-	// 直接返回原始数据，不进行转换
-	pageInfo.List = list
+	// 构建树形结构
+	treeData := s.buildTree(allItems, nil, 1)
+
+	// 如果指定了层级过滤，过滤树形数据
+	if req.Level > 0 {
+		treeData = s.filterByLevel(treeData, req.Level)
+	}
+
+	// 计算总数
+	pageInfo.Count = int64(len(treeData))
+
+	// 执行分页
+	start := (pageInfo.PageIndex - 1) * pageInfo.PageSize
+	end := start + pageInfo.PageSize
+	if start > len(treeData) {
+		pageInfo.List = []models.ArticleContent{}
+	} else if end > len(treeData) {
+		pageInfo.List = treeData[start:]
+	} else {
+		pageInfo.List = treeData[start:end]
+	}
 
 	return pageInfo, nil
+}
+
+// buildTree 构建树形结构
+func (s *ArticleContentService) buildTree(items []models.ArticleContent, parentId *int64, level int) []models.ArticleContent {
+	var result []models.ArticleContent
+
+	// 先找出所有顶级项
+	for _, item := range items {
+		if item.ParentId == parentId {
+			treeItem := item
+			treeItem.Level = level
+			treeItem.Expanded = level <= 2 // 默认展开前两层
+
+			// 递归构建子节点
+			for _, child := range items {
+				if child.ParentId != nil && *child.ParentId == treeItem.Id {
+					childCopy := child
+					childCopy.Level = level + 1
+					treeItem.Children = append(treeItem.Children, childCopy)
+				}
+			}
+
+			// 递归处理子节点
+			if len(treeItem.Children) > 0 {
+				treeItem.Children = s.buildTree(treeItem.Children, &treeItem.Id, level+1)
+			}
+
+			result = append(result, treeItem)
+		}
+	}
+
+	return result
+}
+
+// filterByLevel 按层级过滤树形数据
+func (s *ArticleContentService) filterByLevel(tree []models.ArticleContent, maxLevel int) []models.ArticleContent {
+	var result []models.ArticleContent
+
+	for _, item := range tree {
+		if item.Level <= maxLevel {
+			filteredItem := item
+			// 递归过滤子节点
+			if len(filteredItem.Children) > 0 {
+				filteredItem.Children = s.filterByLevel(filteredItem.Children, maxLevel)
+			}
+			result = append(result, filteredItem)
+		}
+	}
+
+	return result
 }
 
 // Get 获取单个文章
@@ -104,16 +177,30 @@ func (s *ArticleContentService) Get(id int64) (*dto.ArticleContentResponse, erro
 
 // Insert 新增文章
 func (s *ArticleContentService) Insert(c *gin.Context, req *dto.ArticleContentInsertReq) error {
+	// 安全检查
+	if s == nil {
+		return fmt.Errorf("服务实例为空")
+	}
+	if req == nil {
+		return fmt.Errorf("请求参数为空")
+	}
+	if s.Orm == nil {
+		return fmt.Errorf("数据库连接为空")
+	}
+
 	// 获取当前用户ID并转换为int类型
-	userId := int(user.GetUserId(c))
+	userId := user.GetUserId(c)
+	if userId <= 0 {
+		return fmt.Errorf("无效的用户ID")
+	}
 
 	// 创建模型
 	var data models.ArticleContent
 	req.Generate(&data)
 
 	// 设置创建者和更新者
-	data.SetCreateBy(userId)
-	data.SetUpdateBy(userId)
+	data.SetCreateBy(int(userId))
+	data.SetUpdateBy(int(userId))
 
 	// 保存到数据库，明确指定表名，使用Unscoped()禁用软删除字段
 	return s.Orm.Table("article_contents").Unscoped().Create(&data).Error

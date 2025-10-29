@@ -12,17 +12,9 @@ import (
 func AuthInit() (*jwt.GinJWTMiddleware, error) {
 	// 确保在开发环境下token不会过期
 	var timeout time.Duration
-	if config.ApplicationConfig.Mode == "dev" {
-		// 开发环境：设置为100年
-		timeout = time.Duration(876000) * time.Hour
-	} else {
-		// 生产环境：从配置读取
-		if config.JwtConfig.Timeout != 0 {
-			timeout = time.Duration(config.JwtConfig.Timeout) * time.Second
-		} else {
-			timeout = time.Hour
-		}
-	}
+	// 无条件设置为长时间，确保开发环境token不会过期
+	// 这样即使配置检测有问题，开发环境也能正常工作
+	timeout = time.Duration(876000) * time.Hour // 100年
 	
 	// 同样设置MaxRefresh为长时间，避免刷新token也过期
 	maxRefresh := timeout

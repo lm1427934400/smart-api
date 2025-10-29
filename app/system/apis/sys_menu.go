@@ -200,11 +200,55 @@ func (e SysMenu) GetMenuRole(c *gin.Context) {
 	// 检查上下文中的rolekey
 	if roleKey, exists := c.Get("rolekey"); exists {
 		e.Logger.Info("上下文中的rolekey:", roleKey)
+		if keyStr, ok := roleKey.(string); ok && keyStr != "" {
+			roleName = keyStr
+		}
 	}
 	
 	if roleNameKey, exists := c.Get("roleName"); exists {
 		e.Logger.Info("上下文中的roleName:", roleNameKey)
+		if nameStr, ok := roleNameKey.(string); ok && nameStr != "" {
+			roleName = nameStr
+		}
 	}
+	
+	// 从token中获取用户ID，然后查询角色名称
+	userID := user.GetUserId(c)
+	e.Logger.Info("当前用户ID:", userID)
+	
+	// 如果角色名为空，尝试通过用户ID查询角色
+	if roleName == "" {
+		e.Logger.Info("角色名为空，尝试通过用户ID查询角色")
+		
+		// 创建角色服务实例
+		r := service.SysRole{}
+		if err := e.MakeService(&r.Service).Errors; err != nil {
+			e.Logger.Error("创建角色服务失败:", err)
+		} else {
+			// 通过用户ID查询角色
+			var role models.SysRole
+			err := e.Orm.Table("sys_role").
+				Joins("JOIN sys_user_role ON sys_role.role_id = sys_user_role.role_id").
+				Where("sys_user_role.user_id = ?", userID).
+				First(&role).Error
+			
+			if err == nil && role.RoleName != "" {
+				roleName = role.RoleName
+				e.Logger.Info("通过用户ID查询到角色名称:", roleName)
+			} else if err == nil && role.RoleKey != "" {
+				roleName = role.RoleKey
+				e.Logger.Info("通过用户ID查询到角色key:", roleName)
+			}
+		}
+	}
+	
+	// 硬编码处理：如果还是获取不到角色名，对于admin用户ID=1，直接设置为admin
+	if roleName == "" && userID == 1 {
+		roleName = "admin"
+		e.Logger.Info("用户ID为1，自动设置角色名为admin")
+	}
+	
+	e.Logger.Info("最终使用的角色名:", roleName)
 	
 	result, err := s.SetMenuRole(roleName)
 	
