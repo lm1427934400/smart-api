@@ -1,3 +1,5 @@
+// @Author sunwenbo
+// 2024/7/12 20:28
 package router
 
 import (
@@ -7,16 +9,10 @@ import (
 	jwt "github.com/go-admin-team/go-admin-core/sdk/pkg/jwtauth"
 )
 
-// 初始化函数，注册所有路由
-func init() {
-	// 将认证路由添加到需要检查的角色列表
-	routerCheckRole = append(routerCheckRole, registerSysContentAuthRouter)
-	// 将公开路由添加到无需认证的路由列表
-	routerNoCheckRole = append(routerNoCheckRole, registerSysContentPublicRouter)
-}
-
-// 需要认证的路由代码 - 用于文章管理（发布、编辑、删除）
-func registerSysContentAuthRouter(v1 *gin.RouterGroup, authMiddleware *jwt.GinJWTMiddleware) {
+// RegisterArticleAuthRoutes 注册需要认证的文章路由
+// 注意：现在主要由smart模块的sys_content.go管理路由注册
+// 此函数保留以便于在需要时直接使用
+func RegisterArticleAuthRoutes(v1 *gin.RouterGroup, authMiddleware *jwt.GinJWTMiddleware) {
 	// 创建新的Gin路由组并添加认证中间件
 	r := v1.Group("/article").Use(authMiddleware.MiddlewareFunc())
 	{
@@ -26,24 +22,22 @@ func registerSysContentAuthRouter(v1 *gin.RouterGroup, authMiddleware *jwt.GinJW
 			articleHandler.MakeContext(c)
 			articleHandler.UploadMarkdownFile(c)
 		})
-		
-		// 直接使用文章API实例处理其他请求，避免空指针错误
+
+		// 直接使用文章API实例处理其他请求
 		contentAPI := apis.NewArticleContentAPI()
 		r.POST("/update", contentAPI.UpdateArticle)
 		r.POST("/delete", contentAPI.DeleteArticle)
 	}
 }
 
-// 注册无需认证的文章路由
-func registerSysContentPublicRouter(v1 *gin.RouterGroup) {
+// RegisterArticlePublicRoutes 注册无需认证的文章路由
+// 注意：现在主要由smart模块的sys_content.go管理路由注册
+// 此函数保留以便于在需要时直接使用
+func RegisterArticlePublicRoutes(v1 *gin.RouterGroup) {
 	// 直接使用文章API实例处理请求
 	contentAPI := apis.NewArticleContentAPI()
-	// 确保文章列表路由无需认证即可访问
 	v1.GET("/article", contentAPI.GetPage)                             // 文章列表
-	// 确保文章详情路由无需认证即可访问
 	v1.GET("/article/detail/:id", contentAPI.GetDetail)                // 文章详情
-	// 确保/current-user路由无需认证即可访问
 	v1.GET("/article/current-user", contentAPI.GetCurrentUserArticles) // 当前用户文章
-	// Markdown预览路由
 	v1.GET("/article/preview", contentAPI.PreviewMarkdown)             // Markdown预览
 }
